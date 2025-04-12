@@ -6,8 +6,10 @@ import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
+from flask import Flask
+from threading import Thread
+# Load environment variables
 load_dotenv()
-
 # --- GOOGLE SHEET SETUP ---
 scope = [
     "https://spreadsheets.google.com/feeds",
@@ -322,6 +324,23 @@ async def leaderboard(interaction: discord.Interaction):
         f"🏆 **Attendance Leaderboard (Last 30 Days)**\n\n{leaderboard_text}")
 
 
+# --- Flask Keep-Alive Server ---
+
+app = Flask(__name__)
+@app.route('/')
+
+def keep_alive():
+
+    return "BFLxMain2.1 - I'm up baby!", 200
+
+def run():
+
+    app.run(host='0.0.0.0', port=8080)
+
+# Run the Flask app in a separate thread
+Thread(target=run).start()
+
+# --- Run the Discord Bot ---
 
 # --- Run the Bot ---
 bot_token = os.getenv('DISCORD_TOKEN') 
