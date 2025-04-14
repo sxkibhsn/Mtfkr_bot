@@ -323,10 +323,16 @@ async def leaderboard(interaction: discord.Interaction):
     sorted_board = sorted(leaderboard_data, key=lambda x: x[1], reverse=True)
 
     leaderboard_lines = []
-    for i, (member, percent) in enumerate(sorted_board, start=1):
-        leaderboard_lines.append(f"**{i}. {member}** — {percent:.2f}%")
+    leaderboard_lines.append("```")
+    leaderboard_lines.append(f"{'Rank':<5} {'Member':<25} {'% Attendance':>12}")
+    leaderboard_lines.append("-" * 45)
 
+    for i, (member, percent) in enumerate(sorted_board, start=1):
+        leaderboard_lines.append(f"{str(i) + '.':<5} {member:<25} {f'{percent:.2f}%':>12}")
+
+    leaderboard_lines.append("```")
     leaderboard_text = "\n".join(leaderboard_lines)
+
     await interaction.followup.send(
         f"🏆 **Attendance Leaderboard (Last 30 Days)**\n\n{leaderboard_text}")
 
