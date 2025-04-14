@@ -89,7 +89,7 @@ async def party(interaction: discord.Interaction,
 
     author = interaction.user.display_name
     timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    thread_id = str(interaction.channel.id)  # Unique event ID per thread
+    event_name = interaction.channel.name  # Use thread/channel name as the event
     image_url = image1.url
     file_name = image1.filename
 
@@ -105,7 +105,7 @@ async def party(interaction: discord.Interaction,
     existing_records = sheet.get_all_records()
     already_mentioned = {
         row["Member"]
-        for row in existing_records if str(row.get("Event")) == thread_id
+        for row in existing_records if row.get("Event") == event_name
     }
 
     summary_lines = []
@@ -115,11 +115,11 @@ async def party(interaction: discord.Interaction,
                 f"**{member.display_name}** - ❌ Already added to this thread.")
         else:
             sheet.append_row([
-                timestamp, author, member.display_name, image_url, thread_id
+                timestamp, author, member.display_name, image_url, event_name
             ])
             summary_lines.append(f"**{member.display_name}** - ✅ Added")
 
-    summary = (f"🧵 **Thread:** {interaction.channel.name} (`{thread_id}`)\n"
+    summary = (f"🧵 **Thread:** {event_name}\n"
                f"**Party Members:**\n" + "\n".join(summary_lines) + "\n"
                f"📎 **Screenshot:** [{file_name}]({image_url})")
 
