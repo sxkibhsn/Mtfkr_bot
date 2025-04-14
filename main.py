@@ -11,7 +11,7 @@ from threading import Thread
 import asyncio
 import time
 
-Load environment variables
+#Load environment variables
 
 load_dotenv()
 
