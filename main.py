@@ -8,17 +8,18 @@ from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
+
 # Load environment variables
 load_dotenv()
+
 # --- GOOGLE SHEET SETUP ---
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
 ]
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "credentials.json", scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 sheet_client = gspread.authorize(creds)
-sheet = sheet_client.open("MTFKR Attendance").sheet1  # Change if needed
+sheet = sheet_client.open("MTFKR Attendance").sheet1  # Sheet must have correct column headers
 
 # --- DISCORD BOT SETUP ---
 intents = discord.Intents.default()
@@ -31,7 +32,6 @@ tree = bot.tree
 
 active_attendance_channels = set()
 
-
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
@@ -40,7 +40,6 @@ async def on_ready():
         print(f"✅ Synced {len(synced)} command(s)")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
-
 
 # --- Enable attendance when bot is mentioned ---
 @bot.event
@@ -51,14 +50,11 @@ async def on_message(message):
     if bot.user in message.mentions:
         if message.author.guild_permissions.administrator:
             active_attendance_channels.add(message.channel.id)
-            await message.channel.send(
-                "✅ Attendance activated in this channel.")
+            await message.channel.send("✅ Attendance activated in this channel.")
         else:
-            await message.channel.send(
-                "⛔ You must be an admin to activate attendance.")
+            await message.channel.send("⛔ You must be an admin to activate attendance.")
 
     await bot.process_commands(message)
-
 
 # --- /party Slash Command ---
 @tree.command(name="party", description="Check in for event participation.")
@@ -79,58 +75,45 @@ async def party(interaction: discord.Interaction,
                 name4: discord.Member = None,
                 name5: discord.Member = None,
                 name6: discord.Member = None):
-    # Attendance must be activated
     if interaction.channel.id not in active_attendance_channels:
         await interaction.response.send_message(
             "⚠️ Attendance is not active in this channel.", ephemeral=True)
         return
 
-    await interaction.response.defer()  # Prevent timeout
+    await interaction.response.defer()
 
     author = interaction.user.display_name
     timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    event_name = interaction.channel.name
+    thread_id = str(interaction.channel.id)
     image_url = image1.url
     file_name = image1.filename
 
-    # Collect valid member mentions
-    members = [
-        name for name in [name1, name2, name3, name4, name5, name6]
-        if name is not None
-    ]
+    members = [m for m in [name1, name2, name3, name4, name5, name6] if m is not None]
     if not members:
-        await interaction.followup.send(
-            "❌ You must mention at least 1 member.", ephemeral=True)
+        await interaction.followup.send("❌ You must mention at least 1 member.", ephemeral=True)
         return
 
-    # Fetch all existing rows for this event to detect duplicates
     existing_records = sheet.get_all_records()
-    already_recorded = {
-        row["Name"] + "|" + row["Party"]
-        for row in existing_records if row["Name"] == event_name
+    already_mentioned = {
+        row["Member"]
+        for row in existing_records if str(row.get("Event")) == thread_id
     }
 
     summary_lines = []
     for member in members:
-        key = f"{event_name}|{member.display_name}"
-        if key in already_recorded:
-            summary_lines.append(
-                f"**{member.display_name}** - Duplicate Member")
+        if member.display_name in already_mentioned:
+            summary_lines.append(f"**{member.display_name}** - ❌ Already added to this thread.")
         else:
-            # Append to Google Sheet
-            sheet.append_row([
-                timestamp, author, member.display_name, image_url, event_name
-            ])
-            summary_lines.append(f"**{member.display_name}**")
+            sheet.append_row([timestamp, author, member.display_name, image_url, thread_id])
+            summary_lines.append(f"**{member.display_name}** - ✅ Added")
 
-    summary = (f"**Name:** {event_name}\n"
-               f"**Party:**\n" + "\n".join(summary_lines) + "\n"
-               f"**Images:** [📎 {file_name}]({image_url})")
+    summary = (f"🧵 **Thread:** {interaction.channel.name} (`{thread_id}`)\n"
+               f"**Party Members:**\n" + "\n".join(summary_lines) + "\n"
+               f"📎 **Screenshot:** [{file_name}]({image_url})")
 
     await interaction.followup.send(summary)
 
-
-# --- /attendance_percent Slash Command --- 
+# --- /attendance_percent Slash Command ---
 @tree.command(name="attendance_percent", description="Show a member's attendance percentage.")
 @app_commands.describe(member="Select the member to check attendance for.")
 async def attendance_percent(interaction: discord.Interaction, member: discord.Member):
@@ -162,15 +145,10 @@ async def attendance_percent(interaction: discord.Interaction, member: discord.M
                 member_events.add(event)
                 try:
                     timestamp = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                    
-                    # Attendance for the last 15 days
                     if timestamp >= fifteen_days_ago:
                         last_15_days.add(event)
-
-                    # Attendance for the last 30 days
                     if timestamp >= thirty_days_ago:
                         last_30_days.add(event)
-
                 except Exception as e:
                     print(f"Skipping row with bad timestamp: {timestamp_str} - {e}")
 
@@ -196,21 +174,16 @@ async def attendance_percent(interaction: discord.Interaction, member: discord.M
 
     await interaction.followup.send(summary)
 
-
-
 # --- /attendance_stats Slash Command ---
-@tree.command(name="attendance_stats",
-              description="Show a member's attendance over time.")
+@tree.command(name="attendance_stats", description="Show a member's attendance over time.")
 @app_commands.describe(member="Select the member to check stats for.")
-async def attendance_stats(interaction: discord.Interaction,
-                           member: discord.Member):
+async def attendance_stats(interaction: discord.Interaction, member: discord.Member):
     await interaction.response.defer()
 
     try:
         records = sheet.get_all_records()
     except Exception as e:
-        await interaction.followup.send(f"❌ Failed to read sheet: {e}",
-                                        ephemeral=True)
+        await interaction.followup.send(f"❌ Failed to read sheet: {e}", ephemeral=True)
         return
 
     now = datetime.datetime.utcnow()
@@ -236,18 +209,13 @@ async def attendance_stats(interaction: discord.Interaction,
         if attendee == member.display_name:
             total_attended.add(event)
             try:
-                timestamp = datetime.datetime.strptime(timestamp_str,
-                                                       "%Y-%m-%d %H:%M:%S")
-
+                timestamp = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
                 if timestamp >= fifteen_days_ago:
                     last_15_days.add(event)
-
                 if timestamp.month == current_month and timestamp.year == current_year:
                     current_month_events.add(event)
-
             except Exception as e:
-                print(
-                    f"Skipping row with bad timestamp: {timestamp_str} - {e}")
+                print(f"Skipping row with bad timestamp: {timestamp_str} - {e}")
 
     total_events = len(all_events)
     stats = {
@@ -264,8 +232,7 @@ async def attendance_stats(interaction: discord.Interaction,
 
     await interaction.followup.send(summary)
 
-
-# --- /leaderboard Slash Command --- 
+# --- /leaderboard Slash Command ---
 @tree.command(name="leaderboard", description="Show attendance percentage for all members.")
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -292,7 +259,6 @@ async def leaderboard(interaction: discord.Interaction):
 
         event_set.add(event)
 
-        # Only count attendance for events in the last 30 days
         try:
             timestamp = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
             if timestamp >= thirty_days_ago:
@@ -303,7 +269,6 @@ async def leaderboard(interaction: discord.Interaction):
             print(f"Skipping row with bad timestamp: {timestamp_str} - {e}")
 
     total_events = len(event_set)
-
     if total_events == 0:
         await interaction.followup.send("⚠️ No events found in the sheet.")
         return
@@ -319,31 +284,23 @@ async def leaderboard(interaction: discord.Interaction):
     for i, (member, percent) in enumerate(sorted_board, start=1):
         leaderboard_lines.append(f"**{i}. {member}** — {percent:.2f}%")
 
-    leaderboard_text = "\n".join(leaderboard_lines)
     await interaction.followup.send(
-        f"🏆 **Attendance Leaderboard (Last 30 Days)**\n\n{leaderboard_text}")
-
+        f"🏆 **Attendance Leaderboard (Last 30 Days)**\n\n{'\n'.join(leaderboard_lines)}"
+    )
 
 # --- Flask Keep-Alive Server ---
-
 app = Flask(__name__)
+
 @app.route('/')
-
 def keep_alive():
-
     return "BFLxMain2.1 - I'm up baby!", 200
 
 def run():
-
     app.run(host='0.0.0.0', port=8080)
 
-# Run the Flask app in a separate thread
+# Run Flask app in a background thread
 Thread(target=run).start()
 
-# --- Run the Discord Bot ---
-
 # --- Run the Bot ---
-bot_token = os.getenv('DISCORD_TOKEN') 
-    
-bot.run(bot_token)  # Starts the bot
-
+bot_token = os.getenv('DISCORD_TOKEN')
+bot.run(bot_token)
