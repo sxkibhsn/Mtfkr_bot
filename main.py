@@ -272,7 +272,7 @@ async def attendance_stats(interaction: discord.Interaction,
     await interaction.followup.send(summary)
 
 
-# --- /leaderboard Slash Command --- 
+# --- /leaderboard Slash Command ---
 @tree.command(name="leaderboard", description="Show attendance percentage for all members.")
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -299,7 +299,6 @@ async def leaderboard(interaction: discord.Interaction):
 
         event_set.add(event)
 
-        # Only count attendance for events in the last 30 days
         try:
             timestamp = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
             if timestamp >= thirty_days_ago:
@@ -322,19 +321,33 @@ async def leaderboard(interaction: discord.Interaction):
 
     sorted_board = sorted(leaderboard_data, key=lambda x: x[1], reverse=True)
 
-    leaderboard_lines = []
-    leaderboard_lines.append("```")
-    leaderboard_lines.append(f"{'Rank':<5} {'Member':<25} {'% Attendance':>12}")
-    leaderboard_lines.append("-" * 45)
+    # Prepare the header
+    header = "```" + "\n" + f"{'Rank':<5} {'Member':<25} {'% Attendance':>12}" + "\n" + "-" * 45 + "\n"
+    footer = "```"
 
+    leaderboard_lines = []
     for i, (member, percent) in enumerate(sorted_board, start=1):
         leaderboard_lines.append(f"{str(i) + '.':<5} {member:<25} {f'{percent:.2f}%':>12}")
 
-    leaderboard_lines.append("```")
-    leaderboard_text = "\n".join(leaderboard_lines)
+    # Now split and send
+    messages = []
+    current_message = header
+    for line in leaderboard_lines:
+        if len(current_message) + len(line) + len(footer) + 1 > 2000:
+            current_message += footer
+            messages.append(current_message)
+            current_message = header  # Start new message
+        current_message += line + "\n"
 
-    await interaction.followup.send(
-        f"🏆 **Attendance Leaderboard (Last 30 Days)**\n\n{leaderboard_text}")
+    if current_message.strip() != header.strip():
+        current_message += footer
+        messages.append(current_message)
+
+    # Send all parts one by one
+    await interaction.followup.send("🏆 **Attendance Leaderboard (Last 30 Days)**\n\n")
+    for msg in messages:
+        await interaction.followup.send(msg)
+
 
 
 # --- Flask Keep-Alive Server ---
